@@ -1,8 +1,11 @@
-import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
-import { spawn } from 'node:child_process'
-import { fileURLToPath } from 'node:url'
-import { dirname, resolve } from 'node:path'
+import type { IncomingMessage, ServerResponse } from 'node:http'
 
+import { Buffer } from 'node:buffer'
+import { spawn } from 'node:child_process'
+import { createServer } from 'node:http'
+import { dirname, resolve } from 'node:path'
+import process from 'node:process'
+import { fileURLToPath } from 'node:url'
 import OBSWebSocket, { EventSubscription } from 'obs-websocket-js/json'
 
 import {
@@ -169,7 +172,7 @@ async function readSecret(prompt: string) {
           finish()
           return
         }
-        if (char === '\u007f' || char === '\b') {
+        if (char === '\u007F' || char === '\b') {
           if (value.length > 0) {
             value = value.slice(0, -1)
             process.stdout.write('\b \b')
@@ -238,8 +241,12 @@ if ($result -eq [System.Windows.Forms.DialogResult]::OK) {
 
   let output = ''
   let errorOutput = ''
-  child.stdout.on('data', data => { output += String(data) })
-  child.stderr.on('data', data => { errorOutput += String(data) })
+  child.stdout.on('data', (data) => {
+    output += String(data)
+  })
+  child.stderr.on('data', (data) => {
+    errorOutput += String(data)
+  })
 
   const exitCode = await new Promise<number | null>((resolveExit) => {
     child.once('close', resolveExit)
@@ -258,11 +265,13 @@ function asInput(value: unknown): ObsInput | undefined {
   const input = value as Record<string, unknown>
   const inputName = typeof input.inputName === 'string' ? input.inputName : ''
 
-  return inputName ? {
-    inputName,
-    inputUuid: typeof input.inputUuid === 'string' ? input.inputUuid : undefined,
-    inputKind: typeof input.inputKind === 'string' ? input.inputKind : undefined,
-  } : undefined
+  return inputName
+    ? {
+        inputName,
+        inputUuid: typeof input.inputUuid === 'string' ? input.inputUuid : undefined,
+        inputKind: typeof input.inputKind === 'string' ? input.inputKind : undefined,
+      }
+    : undefined
 }
 
 function chooseInput(inputs: ObsInput[], requestedName?: string) {
@@ -396,7 +405,7 @@ class OverlayEventServer {
 
     response.writeHead(200, {
       'Cache-Control': 'no-cache, no-transform',
-      Connection: 'keep-alive',
+      'Connection': 'keep-alive',
       'Content-Type': 'text/event-stream; charset=utf-8',
       'X-Accel-Buffering': 'no',
     })
@@ -614,8 +623,12 @@ async function main() {
     if (exitCode !== 0) process.exitCode = exitCode
   }
 
-  process.once('SIGINT', () => { void shutdown() })
-  process.once('SIGTERM', () => { void shutdown() })
+  process.once('SIGINT', () => {
+    void shutdown()
+  })
+  process.once('SIGTERM', () => {
+    void shutdown()
+  })
 
   obs.on('InputVolumeMeters', (event) => {
     if (shuttingDown) return
