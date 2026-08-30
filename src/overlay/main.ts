@@ -1,6 +1,8 @@
 import { Config, Live2DSprite } from 'easy-live2d'
 import { Application, Ticker } from 'pixi.js'
 
+import { pickRandomItem } from '../utils/randomItem'
+
 type OverlayAction = 'LEFT' | 'RIGHT' | 'BOTH'
 type OverlayIntensity = 'light' | 'normal' | 'strong'
 
@@ -36,8 +38,33 @@ interface OverlayHelloEvent {
 type OverlayEvent = OverlayBeatEvent | OverlayMeterEvent | OverlayHelloEvent
 
 const MODEL_PATH = '/models/keyboard/cat.model3.json'
-const LEFT_KEY_PATH = '/models/keyboard/resources/left-keys/KeyF.png'
-const RIGHT_KEY_PATH = '/models/keyboard/resources/right-keys/LeftArrow.png'
+const MODEL_RESOURCE_PATH = '/models/keyboard/resources'
+const LEFT_KEY_NAMES = [
+  ...'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('').map(key => `Key${key}`),
+  ...'0123456789'.split('').map(key => `Num${key}`),
+  'Alt',
+  'AltGr',
+  'BackQuote',
+  'Backspace',
+  'CapsLock',
+  'Control',
+  'ControlLeft',
+  'ControlRight',
+  'Delete',
+  'Escape',
+  'Fn',
+  'Meta',
+  'Return',
+  'Shift',
+  'ShiftLeft',
+  'ShiftRight',
+  'Slash',
+  'Space',
+  'Tab',
+]
+const RIGHT_KEY_NAMES = ['DownArrow', 'LeftArrow', 'RightArrow', 'UpArrow']
+const LEFT_KEY_PATHS = LEFT_KEY_NAMES.map(key => `${MODEL_RESOURCE_PATH}/left-keys/${key}.png`)
+const RIGHT_KEY_PATHS = RIGHT_KEY_NAMES.map(key => `${MODEL_RESOURCE_PATH}/right-keys/${key}.png`)
 const DEFAULT_EVENTS_URL = 'http://127.0.0.1:45123/events'
 
 const appElement = document.getElementById('app')
@@ -69,6 +96,10 @@ const activeLayers: Record<'left' | 'right', HTMLImageElement | undefined> = {
   right: undefined,
 }
 const releaseTimers: Record<'left' | 'right', number | undefined> = {
+  left: undefined,
+  right: undefined,
+}
+const previousKeyPaths: Record<'left' | 'right', string | undefined> = {
   left: undefined,
   right: undefined,
 }
@@ -106,15 +137,27 @@ function releaseSide(side: 'left' | 'right') {
   sprite?.setParameterValueById(side === 'left' ? 'CatParamLeftHandDown' : 'CatParamRightHandDown', 0)
 }
 
+function pickKeyPath(side: 'left' | 'right') {
+  const paths = side === 'left' ? LEFT_KEY_PATHS : RIGHT_KEY_PATHS
+  const path = pickRandomItem(paths, previousKeyPaths[side])
+
+  if (path) previousKeyPaths[side] = path
+
+  return path
+}
+
 function pressSide(side: 'left' | 'right', holdMs: number) {
   if (!sprite || !ready) return
 
   releaseSide(side)
 
+  const keyPath = pickKeyPath(side)
+  if (!keyPath) return
+
   const layer = document.createElement('img')
   layer.className = 'key-layer'
   layer.alt = ''
-  layer.src = side === 'left' ? LEFT_KEY_PATH : RIGHT_KEY_PATH
+  layer.src = keyPath
   keyLayer.appendChild(layer)
   activeLayers[side] = layer
 

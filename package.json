@@ -15,6 +15,7 @@
     "build:icon": "tsx scripts/buildIcon.ts",
     "test:rhythm": "tsx scripts/testRhythmDetector.ts",
     "test:spectrum": "tsx scripts/testSpectrumAnalyzer.ts",
+    "test:random": "tsx scripts/testRandomItem.ts",
     "bridge:obs": "tsx scripts/obsBongoBridge.ts",
     "preview": "vite preview",
     "tauri": "tauri",

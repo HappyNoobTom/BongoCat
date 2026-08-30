@@ -12,6 +12,7 @@ import {
 } from '@/services/rhythmDetector'
 import { useModelStore } from '@/stores/model'
 import { useObsAudioStore } from '@/stores/obsAudio'
+import { pickRandomItem } from '@/utils/randomItem'
 
 import { useModel } from './useModel'
 import { useTauriListen } from './useTauriListen'
@@ -40,11 +41,13 @@ interface ObsRuntimeState {
 
 export type ObsAudioTestAction = 'left' | 'right' | 'both'
 
-// The first entries are the keyboard preset's canonical keys. The remaining
-// entries keep the test action useful if a user has selected another bundled
-// BongoCat model that exposes gamepad-style key slots.
-const LEFT_KEY_CANDIDATES = ['KeyF', 'DPadLeft', 'LeftTrigger', 'West'] as const
-const RIGHT_KEY_CANDIDATES = ['LeftArrow', 'RightArrow', 'DPadRight', 'RightTrigger', 'East'] as const
+// These are fallbacks for models that expose gamepad-style key slots instead
+// of the keyboard preset's left-keys/right-keys resource directories. For a
+// normal keyboard model the complete set of keys is discovered from the
+// loaded resource paths below, so the music animation is not locked to F or
+// one arrow key.
+const LEFT_KEY_FALLBACKS = ['KeyF', 'DPadLeft', 'LeftTrigger', 'West'] as const
+const RIGHT_KEY_FALLBACKS = ['LeftArrow', 'RightArrow', 'DPadRight', 'RightTrigger', 'East'] as const
 
 function errorMessage(error: unknown) {
   if (error instanceof Error) return error.message
@@ -124,7 +127,8 @@ export function useObsAudio() {
   let reconnectTimer: ReturnType<typeof setTimeout> | undefined
   let destroyed = false
   let nextHand: 'left' | 'right' = 'left'
-  let nextRightKey = 0
+  let previousLeftKey: string | undefined
+  let previousRightKey: string | undefined
   let lastRuntimeBroadcast = 0
 
   const publishRuntime = (force = false) => {
@@ -207,12 +211,37 @@ export function useObsAudio() {
     store.lastBeatIntensity = undefined
   }
 
-  const getLeftKey = () => LEFT_KEY_CANDIDATES.find(key => modelStore.supportKeys[key])
+  const getSupportedSideKeys = (side: 'left' | 'right', fallbacks: readonly string[]) => {
+    const groupName = `${side}-keys`
+    const discovered = Object.entries(modelStore.supportKeys)
+      .filter(([, path]) => path.replace(/\\/g, '/').split('/').includes(groupName))
+      .map(([key]) => key)
+
+    if (discovered.length > 0) return discovered
+
+    return fallbacks.filter(key => modelStore.supportKeys[key])
+  }
+
+  const getLeftKey = () => {
+    const key = pickRandomItem(
+      getSupportedSideKeys('left', LEFT_KEY_FALLBACKS),
+      previousLeftKey,
+    )
+
+    if (key) previousLeftKey = key
+
+    return key
+  }
 
   const getRightKey = () => {
-    const rightKeys = RIGHT_KEY_CANDIDATES.filter(key => modelStore.supportKeys[key])
+    const key = pickRandomItem(
+      getSupportedSideKeys('right', RIGHT_KEY_FALLBACKS),
+      previousRightKey,
+    )
 
-    return rightKeys.length > 0 ? rightKeys[nextRightKey % rightKeys.length] : undefined
+    if (key) previousRightKey = key
+
+    return key
   }
 
   const triggerHit = (hit: RhythmHit) => {
@@ -223,7 +252,6 @@ export function useObsAudio() {
     if (hit.intensity === 'strong') {
       if (leftKey) releaseKeyLater(leftKey, duration)
       if (rightKey) releaseKeyLater(rightKey, duration)
-      nextRightKey += 1
       nextHand = 'left'
       return
     }
@@ -236,7 +264,6 @@ export function useObsAudio() {
 
     if (rightKey) {
       releaseKeyLater(rightKey, duration)
-      nextRightKey += 1
       nextHand = 'left'
       return
     }
@@ -266,8 +293,6 @@ export function useObsAudio() {
     if (!key) return
 
     releaseKeyLater(key, 120)
-
-    if (action === 'right') nextRightKey += 1
   }
 
   const handleVolumeMeters = (event: ObsVolumeEvent) => {
