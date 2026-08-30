@@ -2,16 +2,20 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 
 import { Buffer } from 'node:buffer'
 import { spawn } from 'node:child_process'
+import { existsSync } from 'node:fs'
 import { createServer } from 'node:http'
 import { dirname, resolve } from 'node:path'
 import process from 'node:process'
 import { fileURLToPath } from 'node:url'
 import OBSWebSocket, { EventSubscription } from 'obs-websocket-js/json'
 
+import type { SpectrumBand, SpectrumBands } from '../src/services/spectrumAnalyzer'
+
 import {
   getLevelDbFromMeters,
   RhythmDetector,
 } from '../src/services/rhythmDetector'
+import { SpectrumAnalyzer } from '../src/services/spectrumAnalyzer'
 
 interface BridgeConfig {
   host: string
@@ -23,6 +27,8 @@ interface BridgeConfig {
   overlayPort: number
   overlayUrl: string
   addSource: boolean
+  spectrum: boolean
+  spectrumCapturePath?: string
   sensitivity?: number
   minIntervalMs?: number
   strongThreshold?: number
@@ -48,6 +54,8 @@ const PROJECT_DIR = resolve(SCRIPT_DIR, '..')
 const DEFAULT_OVERLAY_PORT = 45123
 const DEFAULT_OVERLAY_URL = 'http://127.0.0.1:1420/obs-overlay.html'
 const DEFAULT_BROWSER_SOURCE_NAME = 'BongoCat 音乐宠物'
+const DEFAULT_SPECTRUM_CAPTURE_PATH = 'D:\\winutils\\bongocat\\audio_capture-windows-x64.exe'
+const SPECTRUM_CAPTURE_RELEASE_URL = 'https://github.com/huxinhai/audio-capture/releases/latest'
 
 function printHelp() {
   console.log(`
@@ -59,6 +67,7 @@ BongoCat OBS 音频桥
   pnpm bridge:obs -- --dry-run
   pnpm bridge:obs -- --gui-password
   pnpm bridge:obs -- --add-source --gui-password
+  pnpm bridge:obs -- --spectrum --add-source --gui-password
 
 选项：
   --host <地址>       OBS 地址，默认 127.0.0.1
@@ -68,6 +77,10 @@ BongoCat OBS 音频桥
   --overlay-port <端口> 本地叠加层事件端口，默认 45123
   --overlay-url <地址> OBS Browser Source 地址，默认 http://127.0.0.1:1420/obs-overlay.html
   --add-source         自动把叠加层加入当前 OBS 场景
+  --spectrum            使用 Windows WASAPI 原始 PCM + FFT 频谱模式
+  --spectrum-capture <路径>  指定 audio_capture Release 可执行文件路径
+  --sensitivity <0.5-2>  频谱动态阈值灵敏度，默认 1
+  --min-interval <毫秒>  两次动作的最短间隔，默认 220
   --dry-run            只识别节拍，不驱动叠加层
   --help              显示此帮助
 
@@ -87,6 +100,7 @@ function parseArgs(argv: string[]): BridgeConfig | 'help' {
     overlayPort: DEFAULT_OVERLAY_PORT,
     overlayUrl: DEFAULT_OVERLAY_URL,
     addSource: false,
+    spectrum: false,
   }
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -105,8 +119,12 @@ function parseArgs(argv: string[]): BridgeConfig | 'help' {
       config.addSource = true
       continue
     }
+    if (arg === '--spectrum') {
+      config.spectrum = true
+      continue
+    }
 
-    if (arg === '--host' || arg === '--port' || arg === '--input' || arg === '--overlay-port' || arg === '--overlay-url') {
+    if (arg === '--host' || arg === '--port' || arg === '--input' || arg === '--overlay-port' || arg === '--overlay-url' || arg === '--spectrum-capture' || arg === '--sensitivity' || arg === '--min-interval') {
       const value = argv[index + 1]
       if (!value) throw new Error(`${arg} 缺少参数`)
 
@@ -127,6 +145,21 @@ function parseArgs(argv: string[]): BridgeConfig | 'help' {
         config.overlayPort = port
       }
       if (arg === '--overlay-url') config.overlayUrl = value
+      if (arg === '--spectrum-capture') config.spectrumCapturePath = value
+      if (arg === '--sensitivity') {
+        const sensitivity = Number(value)
+        if (!Number.isFinite(sensitivity) || sensitivity < 0.5 || sensitivity > 2) {
+          throw new Error(`灵敏度无效：${value}（范围 0.5 到 2）`)
+        }
+        config.sensitivity = sensitivity
+      }
+      if (arg === '--min-interval') {
+        const minInterval = Number(value)
+        if (!Number.isInteger(minInterval) || minInterval < 120 || minInterval > 600) {
+          throw new Error(`最短间隔无效：${value}（范围 120 到 600 毫秒）`)
+        }
+        config.minIntervalMs = minInterval
+      }
       index += 1
       continue
     }
@@ -301,6 +334,8 @@ interface OverlayBeatEvent {
   score: number
   levelDb: number
   timestamp: number
+  band?: SpectrumBand
+  bpm?: number
 }
 
 interface OverlayMeterEvent {
@@ -309,9 +344,22 @@ interface OverlayMeterEvent {
   levelDb: number
   normalizedLevel: number
   timestamp: number
+  source?: 'obs-meter' | 'wasapi-spectrum'
+  bands?: SpectrumBands
+  spectrum?: number[]
+  bpm?: number
 }
 
 type OverlayEvent = OverlayBeatEvent | OverlayMeterEvent
+
+interface BridgeBeat {
+  intensity: 'light' | 'normal' | 'strong'
+  score: number
+  levelDb: number
+  timestamp: number
+  band?: SpectrumBand
+  bpm?: number
+}
 
 /**
  * Local-only event stream consumed by the OBS Browser Source.
@@ -471,6 +519,27 @@ class OverlayWebServer {
   }
 }
 
+function resolveSpectrumCapturePath(config: BridgeConfig) {
+  const configured = config.spectrumCapturePath || process.env.BONGO_AUDIO_CAPTURE
+  const candidates = configured
+    ? [configured]
+    : [
+        DEFAULT_SPECTRUM_CAPTURE_PATH,
+        'D:\\winutils\\audio_capture-windows-x64.exe',
+        'D:\\winutils\\audio_capture.exe',
+      ]
+
+  for (const candidate of candidates) {
+    const path = resolve(candidate)
+    if (existsSync(path)) return path
+  }
+
+  throw new Error(
+    `找不到 WASAPI 采集程序（尝试过：${candidates.join('、')}）。请从 ${SPECTRUM_CAPTURE_RELEASE_URL} `
+    + '下载 Windows x64 Release，或使用 --spectrum-capture 指定路径。',
+  )
+}
+
 async function ensureObsBrowserSource(
   obs: OBSWebSocket,
   overlayUrl: string,
@@ -580,6 +649,17 @@ async function main() {
   }
 
   const config = parsed
+  let spectrumMode = config.spectrum
+  let spectrumCapturePath: string | undefined
+  if (spectrumMode) {
+    try {
+      spectrumCapturePath = resolveSpectrumCapturePath(config)
+    } catch (error) {
+      console.warn(`频谱采集程序不可用，将回退到 OBS 音量模式：${errorMessage(error)}`)
+      spectrumMode = false
+    }
+  }
+
   const password = process.env.OBS_WEBSOCKET_PASSWORD !== undefined
     ? process.env.OBS_WEBSOCKET_PASSWORD
     : config.guiPassword || !process.stdin.isTTY
@@ -598,6 +678,15 @@ async function main() {
     strongThreshold: config.strongThreshold,
     silenceThresholdDb: config.silenceThresholdDb,
   })
+  const spectrum = spectrumMode
+    ? new SpectrumAnalyzer({
+        channels: 1,
+        includeSpectrum: true,
+        minIntervalMs: config.minIntervalMs ?? 220,
+        sampleRate: 48_000,
+        sensitivity: config.sensitivity,
+      })
+    : undefined
 
   let selectedInputName: string | undefined
   let hand: 'left' | 'right' = 'left'
@@ -605,10 +694,89 @@ async function main() {
   let lastMeterLogAt = 0
   let lastOverlayMeterAt = 0
   let shuttingDown = false
+  let captureProcess: ReturnType<typeof spawn> | undefined
+  let pcmRemainder = Buffer.alloc(0)
+
+  const emitBeat = (hit: BridgeBeat) => {
+    beats += 1
+    let action: OverlayAction
+    if (hit.intensity === 'strong') {
+      action = 'BOTH'
+      hand = 'left'
+    } else if (hit.band === 'mid') {
+      // Snare/clap accents fill the opposite hand without disturbing the
+      // low-band left/right alternation used for kick-driven movement.
+      action = hand === 'left' ? 'RIGHT' : 'LEFT'
+    } else if (hand === 'left') {
+      action = 'LEFT'
+      hand = 'right'
+    } else {
+      action = 'RIGHT'
+      hand = 'left'
+    }
+
+    if (!config.dryRun) {
+      overlay.publish({
+        type: 'beat',
+        action,
+        intensity: hit.intensity,
+        score: hit.score,
+        levelDb: hit.levelDb,
+        timestamp: hit.timestamp,
+        band: hit.band,
+        bpm: hit.bpm,
+      })
+    }
+
+    const bandLabel = hit.band ? ` ${hit.band}` : ''
+    const bpmLabel = hit.bpm ? ` ${hit.bpm.toFixed(0)} BPM` : ''
+    console.log(`[节拍] #${beats}${bandLabel} ${hit.intensity} ${hit.levelDb.toFixed(1)} dB${bpmLabel}`)
+  }
+
+  const publishSpectrumFrame = (frame: {
+    timestamp: number
+    levelDb: number
+    normalizedLevel: number
+    bands: SpectrumBands
+    spectrum?: number[]
+    bpm?: number
+    beat?: BridgeBeat
+  }) => {
+    if (frame.timestamp - lastOverlayMeterAt >= 100) {
+      lastOverlayMeterAt = frame.timestamp
+      overlay.publish({
+        type: 'meter',
+        inputName: selectedInputName || 'Windows 默认播放设备',
+        levelDb: frame.levelDb,
+        normalizedLevel: frame.normalizedLevel,
+        timestamp: frame.timestamp,
+        source: 'wasapi-spectrum',
+        bands: frame.bands,
+        spectrum: frame.spectrum,
+        bpm: frame.bpm,
+      })
+    }
+
+    if (frame.beat) emitBeat(frame.beat)
+
+    if (frame.timestamp - lastMeterLogAt >= 2000) {
+      lastMeterLogAt = frame.timestamp
+      const { lowDb, midDb, highDb } = frame.bands
+      const bpmLabel = frame.bpm ? `，BPM ${frame.bpm.toFixed(0)}` : ''
+      console.log(
+        `[频谱] ${selectedInputName || 'Windows 默认播放设备'} `
+        + `低 ${lowDb.toFixed(1)} / 中 ${midDb.toFixed(1)} / 高 ${highDb.toFixed(1)} dB${bpmLabel}，节拍 ${beats}`,
+      )
+    }
+  }
 
   const shutdown = async (exitCode = 0) => {
     if (shuttingDown) return
     shuttingDown = true
+    if (captureProcess) {
+      captureProcess.kill()
+      captureProcess = undefined
+    }
     await overlay.stop()
     webServer.stop()
 
@@ -630,62 +798,39 @@ async function main() {
     void shutdown()
   })
 
-  obs.on('InputVolumeMeters', (event) => {
-    if (shuttingDown) return
+  if (!spectrumMode) {
+    obs.on('InputVolumeMeters', (event) => {
+      if (shuttingDown) return
 
-    const payload = event as unknown as ObsVolumeEvent
-    const inputs = Array.isArray(payload.inputs) ? payload.inputs as ObsVolumeInput[] : []
-    const selected = selectedInputName
-      ? inputs.find(input => input.inputName === selectedInputName)
-      : inputs[0]
-    const levelDb = getLevelDbFromMeters(selected?.inputLevelsMul)
-    const timestamp = Date.now()
-    const hit = detector.process(levelDb, timestamp)
+      const payload = event as unknown as ObsVolumeEvent
+      const inputs = Array.isArray(payload.inputs) ? payload.inputs as ObsVolumeInput[] : []
+      const selected = selectedInputName
+        ? inputs.find(input => input.inputName === selectedInputName)
+        : inputs[0]
+      const levelDb = getLevelDbFromMeters(selected?.inputLevelsMul)
+      const timestamp = Date.now()
+      const hit = detector.process(levelDb, timestamp)
 
-    if (timestamp - lastMeterLogAt >= 2000) {
-      lastMeterLogAt = timestamp
-      console.log(`[音频] ${selectedInputName || '未选择'} ${levelDb.toFixed(1)} dB，节拍 ${beats}`)
-    }
+      if (timestamp - lastMeterLogAt >= 2000) {
+        lastMeterLogAt = timestamp
+        console.log(`[音频] ${selectedInputName || '未选择'} ${levelDb.toFixed(1)} dB，节拍 ${beats}`)
+      }
 
-    if (timestamp - lastOverlayMeterAt >= 100) {
-      lastOverlayMeterAt = timestamp
-      overlay.publish({
-        type: 'meter',
-        inputName: selectedInputName || '',
-        levelDb,
-        normalizedLevel: Math.max(0, Math.min(1, (levelDb + 55) / 55)),
-        timestamp,
-      })
-    }
+      if (timestamp - lastOverlayMeterAt >= 100) {
+        lastOverlayMeterAt = timestamp
+        overlay.publish({
+          type: 'meter',
+          inputName: selectedInputName || '',
+          levelDb,
+          normalizedLevel: Math.max(0, Math.min(1, (levelDb + 55) / 55)),
+          timestamp,
+          source: 'obs-meter',
+        })
+      }
 
-    if (!hit) return
-
-    beats += 1
-    let action: OverlayAction
-    if (hit.intensity === 'strong') {
-      action = 'BOTH'
-      hand = 'left'
-    } else if (hand === 'left') {
-      action = 'LEFT'
-      hand = 'right'
-    } else {
-      action = 'RIGHT'
-      hand = 'left'
-    }
-
-    if (!config.dryRun) {
-      overlay.publish({
-        type: 'beat',
-        action,
-        intensity: hit.intensity,
-        score: hit.score,
-        levelDb: hit.levelDb,
-        timestamp: hit.timestamp,
-      })
-    }
-
-    console.log(`[节拍] #${beats} ${hit.intensity} ${hit.levelDb.toFixed(1)} dB`)
-  })
+      if (hit) emitBeat(hit)
+    })
+  }
 
   obs.on('ConnectionClosed', () => {
     if (shuttingDown) return
@@ -701,18 +846,23 @@ async function main() {
     const url = `ws://${config.host}:${config.port}`
     console.log(`正在连接 OBS：${url}`)
     await obs.connect(url, password || undefined, {
-      eventSubscriptions: EventSubscription.InputVolumeMeters,
+      eventSubscriptions: spectrumMode ? EventSubscription.None : EventSubscription.InputVolumeMeters,
     })
 
-    const response = await obs.call('GetInputList') as { inputs?: unknown[] }
-    const inputs = (response.inputs || []).map(asInput).filter((value): value is ObsInput => Boolean(value))
-    selectedInputName = chooseInput(inputs, config.inputName)
+    if (spectrumMode) {
+      selectedInputName = 'Windows 默认播放设备 (WASAPI)'
+    } else {
+      const response = await obs.call('GetInputList') as { inputs?: unknown[] }
+      const inputs = (response.inputs || []).map(asInput).filter((value): value is ObsInput => Boolean(value))
+      selectedInputName = chooseInput(inputs, config.inputName)
 
-    if (!selectedInputName) {
-      throw new Error('OBS 当前没有可用音频源，请先确认“桌面音频”或“麦克风/辅助音频”已启用')
+      if (!selectedInputName) {
+        throw new Error('OBS 当前没有可用音频源，请先确认“桌面音频”或“麦克风/辅助音频”已启用')
+      }
     }
 
     detector.reset()
+    spectrum?.reset()
     if (config.addSource) {
       const sourceUrl = new URL(config.overlayUrl)
       sourceUrl.searchParams.set('events', `http://127.0.0.1:${config.overlayPort}/events`)
@@ -720,7 +870,63 @@ async function main() {
       console.log(`已把 Browser Source“${sourceName}”加入 OBS 场景“${sceneName}”`)
     }
 
-    console.log(`已连接 OBS，监听音频源：${selectedInputName}`)
+    if (spectrumMode && spectrum && spectrumCapturePath) {
+      const capturePath = spectrumCapturePath
+      const captureArgs = [
+        '--sample-rate',
+        '48000',
+        '--channels',
+        '1',
+        '--bit-depth',
+        '16',
+        '--chunk-duration',
+        '0.05',
+      ]
+      captureProcess = spawn(capturePath, captureArgs, {
+        stdio: ['ignore', 'pipe', 'pipe'],
+        windowsHide: true,
+      })
+
+      captureProcess.stdout?.on('data', (chunk: Buffer) => {
+        if (shuttingDown) return
+        const incoming = pcmRemainder.length > 0
+          ? Buffer.concat([pcmRemainder, chunk])
+          : chunk
+        const usableBytes = incoming.length - (incoming.length % 2)
+        pcmRemainder = usableBytes < incoming.length
+          ? Buffer.from(incoming.subarray(usableBytes))
+          : Buffer.alloc(0)
+        if (usableBytes <= 0) return
+
+        const frames = spectrum.processPcm(incoming.subarray(0, usableBytes), Date.now())
+        for (const frame of frames) publishSpectrumFrame(frame)
+      })
+
+      let stderr = ''
+      captureProcess.stderr?.on('data', (chunk: Buffer | string) => {
+        stderr += String(chunk)
+        const lines = stderr.split(/\r?\n/)
+        stderr = lines.pop() || ''
+        for (const line of lines) {
+          if (line.trim()) console.log(`[WASAPI] ${line.trim()}`)
+        }
+      })
+      captureProcess.once('error', (error) => {
+        if (shuttingDown) return
+        console.error(`WASAPI 频谱采集启动失败：${errorMessage(error)}`)
+        void shutdown(1)
+      })
+      captureProcess.once('close', (code) => {
+        if (shuttingDown) return
+        if (stderr.trim()) console.error(`[WASAPI] ${stderr.trim()}`)
+        console.error(`WASAPI 频谱采集已停止（退出码 ${code ?? '未知'}）`)
+        void shutdown(1)
+      })
+      console.log(`已启动 WASAPI 频谱采集：${capturePath}`)
+      console.log('采集参数：48kHz / 单声道 / PCM16 / 50ms 分块；不保存音频文件。')
+    }
+
+    console.log(`已连接 OBS，音频模式：${spectrumMode ? 'Windows WASAPI 频谱' : `OBS 音量表（${selectedInputName}）`}`)
     if (config.dryRun) {
       console.log('当前为 dry-run：会识别节拍，但不会驱动叠加层')
     } else {

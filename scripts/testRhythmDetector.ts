@@ -4,10 +4,38 @@ import { getLevelDbFromMeters, RhythmDetector } from '../src/services/rhythmDete
 
 assert.equal(
   getLevelDbFromMeters([[0.1, 0.5, 0.5], [0.1, 0.5, 0.5]]),
-  20 * Math.log10(0.5),
+  20 * Math.log10(0.1),
+)
+assert.equal(
+  getLevelDbFromMeters([[0.01, 0.01, 0.5], [0.01, 0.01, 0.5]]),
+  20 * Math.log10(0.05),
 )
 assert.equal(getLevelDbFromMeters([]), -100)
 assert.equal(getLevelDbFromMeters(undefined), -100)
+
+const periodic = new RhythmDetector()
+let periodicHits = 0
+const periodicLevels = Array.from({ length: 16 }).fill(-40)
+
+for (let beat = 0; beat < 8; beat += 1) {
+  periodicLevels.push(-40, -39.5, -39, -39.7, -40, -40, -40, -40)
+}
+
+for (let index = 0; index < periodicLevels.length; index += 1) {
+  if (periodic.process(periodicLevels[index], index * 50)) periodicHits += 1
+}
+
+assert.ok(periodicHits >= 7, 'small periodic accents should not be dropped')
+
+const noisy = new RhythmDetector()
+let noisyHits = 0
+
+for (let index = 0; index < 100; index += 1) {
+  const jitter = [0, 0.4, -0.3, 0.2, -0.2][index % 5]
+  if (noisy.process(-30 + jitter, index * 50)) noisyHits += 1
+}
+
+assert.equal(noisyHits, 0, 'small meter jitter should not retrigger continuously')
 
 const detector = new RhythmDetector({ minIntervalMs: 100 })
 let timestamp = 0

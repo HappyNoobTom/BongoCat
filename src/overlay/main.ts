@@ -19,6 +19,13 @@ interface OverlayMeterEvent {
   levelDb: number
   normalizedLevel: number
   timestamp: number
+  source?: 'obs-meter' | 'wasapi-spectrum'
+  bands?: {
+    lowDb: number
+    midDb: number
+    highDb: number
+  }
+  bpm?: number
 }
 
 interface OverlayHelloEvent {
@@ -133,7 +140,16 @@ function handleEvent(event: OverlayEvent) {
   }
 
   if (event.type === 'meter') {
-    if (debug) setStatus(`OBS ${event.inputName || '音频'}：${event.levelDb.toFixed(1)} dB`)
+    if (debug) {
+      if (event.source === 'wasapi-spectrum' && event.bands) {
+        const bpm = event.bpm ? ` · ${event.bpm.toFixed(0)} BPM` : ''
+        setStatus(
+          `频谱 低 ${event.bands.lowDb.toFixed(0)} / 中 ${event.bands.midDb.toFixed(0)} / 高 ${event.bands.highDb.toFixed(0)} dB${bpm}`,
+        )
+      } else {
+        setStatus(`OBS ${event.inputName || '音频'}：${event.levelDb.toFixed(1)} dB`)
+      }
+    }
     return
   }
 

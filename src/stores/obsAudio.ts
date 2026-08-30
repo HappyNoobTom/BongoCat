@@ -30,7 +30,9 @@ export const DEFAULT_OBS_AUDIO_SETTINGS: Readonly<ObsAudioSettings> = Object.fre
   sensitivity: 1,
   minIntervalMs: 120,
   strongThreshold: 2.1,
-  silenceThreshold: -55,
+  // OBS' magnitude meter can sit well below -55 dB for a quiet music source.
+  // Keep the detector gate low and let its adaptive baseline reject noise.
+  silenceThreshold: -80,
 })
 
 export const useObsAudioStore = defineStore('obsAudio', () => {

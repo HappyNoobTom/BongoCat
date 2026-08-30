@@ -1,6 +1,7 @@
-# BongoCat OBS 音乐律动（v0.1）
+# BongoCat OBS 音乐律动（v0.4）
 
-这个版本直接基于 BongoCat 自带的模型和动作链路，新增一个“OBS 音乐律动”设置页。它只读取 OBS WebSocket 推送的音量表，不录音、不保存音频，也不会向系统发送真实键盘按键。
+这个版本直接基于 BongoCat 自带的模型和动作链路，新增了一个可供 OBS 使用的 Browser Source 音乐桥。
+推荐的频谱模式从 Windows 播放设备读取 PCM，再做 FFT；它不录音、不保存音频，也不会向系统发送真实键盘按键。
 
 如果你使用官方已经编译好的 Windows Release，不能把代码里的设置页直接替换进去；请使用
 [OBS Browser Source 桥接器](./OBS_BONGOCAT_BRIDGE.md)。它在 OBS 内部渲染同一套默认模型，安全性和动作效果一致。
@@ -20,18 +21,27 @@
 ## 实现范围
 
 ```text
-OBS InputVolumeMeters
+Windows 默认播放设备
+        ↓ WASAPI loopback（audio_capture Release）
+48kHz PCM16（50ms 分块）
+        ↓ fft.js：2048 FFT + Hann 窗 + 512 hop
+低 / 中 / 高频 + spectral flux
+        ↓ 动态阈值、局部峰值、冷却、低频 BPM 估计
         ↓
-obs-websocket-js（本地 WebSocket）
+本地 SSE
         ↓
-自适应重音检测（快慢包络 + 中位数/MAD 阈值）
-        ↓
-轻拍 / 普通重音 / 强重音
-        ↓
-BongoCat 现有 handlePress / handleRelease
+OBS Browser Source 中的 BongoCat 模型
 ```
 
-初版使用 OBS 的 `InputVolumeMeters` 事件。OBS 提供的是约 20Hz 的音量表数据，而不是原始 PCM，因此这里检测的是“音量突然上升的重音”，不是频谱级的底鼓识别或精确 BPM。算法会使用最近约两秒的样本自适应阈值，并用最短间隔避免重复触发。
+也保留旧的 OBS 音量模式：不带 `--spectrum` 时，通过 `obs-websocket-js` 读取约 20Hz 的
+`InputVolumeMeters`，使用 magnitude（RMS）、快慢包络、最近约 1.8 秒的中位数/MAD 动态阈值和三点局部峰值。
+它适合作为采集程序不可用时的后备，但无法获得频谱信息。
+
+频谱模式的三个频段为：
+
+- 低频 30–180Hz：主要对应底鼓和低频律动，驱动左右手交替，并参与 BPM 估计。
+- 中频 180–2500Hz：主要对应军鼓、拍手和主体打击乐，填充另一只手。
+- 高频 2500–10000Hz：只显示，不默认触发，避免镲片噪声造成连击。
 
 动作映射如下：
 
@@ -50,6 +60,11 @@ BongoCat 现有 handlePress / handleRelease
 
 - `obs-websocket-js`（MIT）
 - `simple-statistics`（ISC）
+- `fft.js`（MIT）
+
+频谱模式使用的 `audio_capture-windows-x64.exe` 不提交到本仓库，也不随项目重新打包；它由用户从
+上游 Release 单独下载到本机 `D:\winutils\bongocat`。这样可以保留上游发布物的完整性，并避免把未明确
+许可证的二进制文件重新分发。
 
 ## 本地开发
 
@@ -69,6 +84,7 @@ pnpm exec eslint src --no-fix
 
 ## 当前限制与后续升级
 
-- 初版不显示 BPM，也不区分低频/高频；这是 OBS 音量事件数据粒度决定的。
+- 频谱模式显示低/中/高频段和低频 BPM 估计；BPM 只用于反馈和调试，暂不自动预测缺失拍点。
 - 输入源必须先在 OBS 中存在并有音量活动；选择的源没有音量时，宠物会保持待机。
-- 如果后续需要更准确的节拍，可增加独立的 PCM 捕获层，再把频谱/节拍结果接入同一个动作适配器，不需要改 BongoCat 模型。
+- WASAPI 模式读取的是 Windows 默认播放设备，不会自动包含 OBS 内部滤镜、独立监听设备或虚拟声卡中的其他信号。
+- 如果后续需要严格跟随 OBS 混音，可做原生 OBS raw-audio 插件，再把同样的频谱/节拍结果接入动作适配器。
