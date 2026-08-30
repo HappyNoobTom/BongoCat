@@ -62,6 +62,7 @@
 本分支增加了一个可选的 OBS 音乐模式：推荐使用 Windows WASAPI loopback 取得原始 PCM，经 `fft.js`
 分出低/中/高频并用 spectral flux 识别 onset；OBS 只负责显示 Browser Source 内的默认 BongoCat 模型
 和键盘动作。不会向系统发送 F、方向键等模拟按键。仍保留 OBS 音量表模式作为后备。
+本机还可直接双击 `D:\winutils\bongocat\BongoCat-OBS.cmd` 使用统一入口启动桥接器和频谱链路。
 命令行桥接方式和限制请查看 [OBS_BONGOCAT_BRIDGE.md](./OBS_BONGOCAT_BRIDGE.md)，集成版设置请查看
 [OBS_MUSIC_MODE.md](./OBS_MUSIC_MODE.md)。
 

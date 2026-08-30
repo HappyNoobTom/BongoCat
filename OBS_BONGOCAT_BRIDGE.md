@@ -34,6 +34,15 @@ scripts\start-obs-bongocat.cmd --input "桌面音频"
 scripts\start-obs-bongocat.cmd --spectrum --add-source --gui-password
 ```
 
+现在也提供了一个统一入口：
+
+```text
+D:\winutils\bongocat\BongoCat-OBS.cmd
+```
+
+双击它即可启动桥接器、Vite 叠加层和音频分析链路；首次使用仍会弹出 OBS 密码输入框。该入口本身不
+包含 OBS，OBS 继续作为外部 Browser Source 宿主运行。
+
 也可以显式指定采集程序路径：
 
 ```powershell

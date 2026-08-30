@@ -50,7 +50,7 @@ interface ObsVolumeEvent {
 }
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url))
-const PROJECT_DIR = resolve(SCRIPT_DIR, '..')
+const PROJECT_DIR = resolve(process.env.BONGO_PROJECT_DIR || resolve(SCRIPT_DIR, '..'))
 const DEFAULT_OVERLAY_PORT = 45123
 const DEFAULT_OVERLAY_URL = 'http://127.0.0.1:1420/obs-overlay.html'
 const DEFAULT_BROWSER_SOURCE_NAME = 'BongoCat 音乐宠物'
