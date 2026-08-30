@@ -20,10 +20,12 @@ import { useAppStore } from './stores/app'
 import { useCatStore } from './stores/cat'
 import { useGeneralStore } from './stores/general'
 import { useModelStore } from './stores/model'
+import { useObsAudioStore } from './stores/obsAudio'
 import { useShortcutStore } from './stores/shortcut.ts'
 
 const appStore = useAppStore()
 const modelStore = useModelStore()
+const obsAudioStore = useObsAudioStore()
 const catStore = useCatStore()
 const generalStore = useGeneralStore()
 const shortcutStore = useShortcutStore()
@@ -37,6 +39,7 @@ onMounted(async () => {
   await appStore.init()
   await modelStore.$tauri.start()
   await modelStore.init()
+  await obsAudioStore.$tauri.start()
   await catStore.$tauri.start()
   catStore.init()
   await generalStore.$tauri.start()

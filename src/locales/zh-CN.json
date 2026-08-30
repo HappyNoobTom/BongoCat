@@ -129,6 +129,9 @@
           "alwaysOnTop": "切换猫咪窗口是否置顶。"
         }
       },
+      "obsAudio": {
+        "title": "OBS 音乐律动"
+      },
       "about": {
         "title": "关于",
         "labels": {

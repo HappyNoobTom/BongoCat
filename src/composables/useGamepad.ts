@@ -5,6 +5,7 @@ import { computed, reactive, watch } from 'vue'
 
 import { INVOKE_KEY, LISTEN_KEY } from '@/constants'
 import { useModelStore } from '@/stores/model'
+import { useObsAudioStore } from '@/stores/obsAudio'
 import live2d from '@/utils/live2d'
 
 import { useModel } from './useModel'
@@ -34,6 +35,7 @@ const INITIAL_STICK_STATE: StickState = { x: 0, y: 0, moved: false, pressed: fal
 
 export function useGamepad() {
   const modelStore = useModelStore()
+  const obsAudioStore = useObsAudioStore()
   const { handlePress, handleRelease, handleAxisChange } = useModel()
   const sticks = reactive<Sticks>({
     left: { ...INITIAL_STICK_STATE },
@@ -66,6 +68,8 @@ export function useGamepad() {
   }, { deep: true })
 
   useTauriListen<GamepadEvent>(LISTEN_KEY.GAMEPAD_CHANGED, ({ payload }) => {
+    if (obsAudioStore.settings.enabled) return
+
     const { name, value } = payload
 
     switch (name) {

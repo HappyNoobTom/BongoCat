@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>BongoCat OBS Overlay</title>
+    <script src="/js/live2dcubismcore.min.js"></script>
+    <script src="/js/live2d.min.js"></script>
+    <style>
+      :root,
+      body,
+      #app {
+        margin: 0;
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        background: transparent;
+      }
+
+      body {
+        pointer-events: none;
+      }
+
+      #app {
+        position: relative;
+      }
+
+      canvas,
+      .background,
+      .key-layer {
+        position: absolute;
+        inset: 0;
+        display: block;
+        width: 100%;
+        height: 100%;
+      }
+
+      .key-layer {
+        object-fit: fill;
+      }
+
+      .background {
+        object-fit: fill;
+      }
+
+      #status {
+        position: absolute;
+        right: 8px;
+        bottom: 8px;
+        padding: 3px 6px;
+        border-radius: 4px;
+        color: rgba(255, 255, 255, 0.85);
+        background: rgba(0, 0, 0, 0.45);
+        font: 12px/1.2 sans-serif;
+        opacity: 0;
+        transition: opacity 120ms ease;
+      }
+
+      body.debug #status {
+        opacity: 1;
+      }
+    </style>
+  </head>
+
+  <body>
+    <div id="app">
+      <img class="background" src="/models/keyboard/resources/background.png" alt="" />
+      <canvas id="live2dCanvas"></canvas>
+      <div id="keys"></div>
+      <div id="status">正在等待 OBS 音频…</div>
+    </div>
+    <script type="module" src="/src/overlay/main.ts"></script>
+  </body>
+</html>

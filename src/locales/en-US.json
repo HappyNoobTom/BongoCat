@@ -129,6 +129,9 @@
           "alwaysOnTop": "Toggle whether the cat window stays on top."
         }
       },
+      "obsAudio": {
+        "title": "OBS Music"
+      },
       "about": {
         "title": "About",
         "labels": {

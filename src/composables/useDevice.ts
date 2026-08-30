@@ -8,6 +8,7 @@ import { onMounted, onUnmounted, ref, watch } from 'vue'
 import { useAppStore } from '@/stores/app'
 import { useCatStore } from '@/stores/cat'
 import { useModelStore } from '@/stores/model'
+import { useObsAudioStore } from '@/stores/obsAudio'
 import { inBetween } from '@/utils/is'
 import { isMac, isWindows } from '@/utils/platform'
 
@@ -45,6 +46,7 @@ export function useDevice() {
   const releaseTimers = new Map<string, NodeJS.Timeout>()
   const appStore = useAppStore()
   const catStore = useCatStore()
+  const obsAudioStore = useObsAudioStore()
   const latestCursorPoint = ref<CursorPoint>()
   const smoothedCursorPoint = ref<CursorPoint>()
   const scaleFactor = ref(1)
@@ -184,6 +186,10 @@ export function useDevice() {
   }
 
   useTauriListen<DeviceEvent>(LISTEN_KEY.DEVICE_CHANGED, ({ payload }) => {
+    // In music mode the same visual key slots are driven by OBS accents. The
+    // existing OS listener can stay alive, but must not compete for the slots.
+    if (obsAudioStore.settings.enabled) return
+
     const { kind, value } = payload
 
     if (kind === 'KeyboardPress' || kind === 'KeyboardRelease') {

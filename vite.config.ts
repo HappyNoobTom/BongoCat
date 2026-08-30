@@ -36,4 +36,12 @@ export default defineConfig(async () => ({
       ignored: ['**/src-tauri/**'],
     },
   },
+  build: {
+    rollupOptions: {
+      input: {
+        app: resolve(__dirname, 'index.html'),
+        obsOverlay: resolve(__dirname, 'obs-overlay.html'),
+      },
+    },
+  },
 }))

@@ -57,6 +57,13 @@
 - 完全开源，代码公开透明，绝不收集任何用户数据。
 - 支持离线运行，无需联网，保护用户隐私。
 
+### OBS 音乐律动（v0.2）
+
+本分支增加了一个可选的 OBS 音乐模式：通过本地 OBS WebSocket 音量表识别重音，并在
+Browser Source 叠加层内复用 BongoCat 默认模型和键盘动作。不会向系统发送 F、方向键等模拟按键。
+命令行桥接方式和限制请查看 [OBS_BONGOCAT_BRIDGE.md](./OBS_BONGOCAT_BRIDGE.md)，集成版设置请查看
+[OBS_MUSIC_MODE.md](./OBS_MUSIC_MODE.md)。
+
 ## 模型转换
 
 如果你想将 Bongo-Cat-Mver 应用中的模型转换为兼容 BongoCat 的格式，可以使用以下工具：
