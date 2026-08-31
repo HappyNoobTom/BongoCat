@@ -217,6 +217,15 @@ export function useObsAudio() {
       .filter(([, path]) => path.replace(/\\/g, '/').split('/').includes(groupName))
       .map(([key]) => key)
 
+    // Keep the music animation on the main keyboard for the default model.
+    // Its left-keys directory also contains edge/modifier assets that are
+    // useful for real keyboard input but look misplaced when chosen as a
+    // random music hit.
+    const mainKeyboardKeys = side === 'left'
+      ? discovered.filter(key => /^Key[A-Z]$/.test(key))
+      : discovered
+
+    if (mainKeyboardKeys.length > 0) return mainKeyboardKeys
     if (discovered.length > 0) return discovered
 
     return fallbacks.filter(key => modelStore.supportKeys[key])

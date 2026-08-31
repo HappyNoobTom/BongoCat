@@ -41,30 +41,12 @@ const MODEL_PATH = '/models/keyboard/cat.model3.json'
 const MODEL_RESOURCE_PATH = '/models/keyboard/resources'
 const LEFT_KEY_NAMES = [
   ...'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('').map(key => `Key${key}`),
-  ...'0123456789'.split('').map(key => `Num${key}`),
-  'Alt',
-  'AltGr',
-  'BackQuote',
-  'Backspace',
-  'CapsLock',
-  'Control',
-  'ControlLeft',
-  'ControlRight',
-  'Delete',
-  'Escape',
-  'Fn',
-  'Meta',
-  'Return',
-  'Shift',
-  'ShiftLeft',
-  'ShiftRight',
-  'Slash',
-  'Space',
-  'Tab',
 ]
 const RIGHT_KEY_NAMES = ['DownArrow', 'LeftArrow', 'RightArrow', 'UpArrow']
 const LEFT_KEY_PATHS = LEFT_KEY_NAMES.map(key => `${MODEL_RESOURCE_PATH}/left-keys/${key}.png`)
 const RIGHT_KEY_PATHS = RIGHT_KEY_NAMES.map(key => `${MODEL_RESOURCE_PATH}/right-keys/${key}.png`)
+const LEFT_FALLBACK_PATH = `${MODEL_RESOURCE_PATH}/left-keys/KeyF.png`
+const RIGHT_FALLBACK_PATH = `${MODEL_RESOURCE_PATH}/right-keys/LeftArrow.png`
 const DEFAULT_EVENTS_URL = 'http://127.0.0.1:45123/events'
 
 const appElement = document.getElementById('app')
@@ -152,16 +134,31 @@ function pressSide(side: 'left' | 'right', holdMs: number) {
   releaseSide(side)
 
   const keyPath = pickKeyPath(side)
-  if (!keyPath) return
+  const parameterId = side === 'left' ? 'CatParamLeftHandDown' : 'CatParamRightHandDown'
+
+  // Keep the Live2D hand action independent from the optional key image. A
+  // missing/failed image must not make the paw stay raised for the whole beat.
+  sprite.setParameterValueById(parameterId, 1)
+
+  if (!keyPath) {
+    releaseTimers[side] = window.setTimeout(() => releaseSide(side), holdMs)
+    return
+  }
 
   const layer = document.createElement('img')
   layer.className = 'key-layer'
   layer.alt = ''
   layer.src = keyPath
+  layer.addEventListener('error', () => {
+    const fallbackPath = side === 'left' ? LEFT_FALLBACK_PATH : RIGHT_FALLBACK_PATH
+
+    if (layer.src.endsWith(fallbackPath)) return
+
+    layer.src = fallbackPath
+  })
   keyLayer.appendChild(layer)
   activeLayers[side] = layer
 
-  sprite.setParameterValueById(side === 'left' ? 'CatParamLeftHandDown' : 'CatParamRightHandDown', 1)
   releaseTimers[side] = window.setTimeout(() => releaseSide(side), holdMs)
 }
 
