@@ -71,6 +71,7 @@ let sprite: Live2DSprite | undefined
 let ready = false
 let eventSource: EventSource | undefined
 let demoTimer: number | undefined
+let previousBeatTimestamp = 0
 const pendingActions: Array<{ action: OverlayAction, holdMs: number }> = []
 
 const activeLayers: Record<'left' | 'right', HTMLImageElement | undefined> = {
@@ -175,6 +176,7 @@ function triggerAction(action: OverlayAction, holdMs: number) {
 
 function handleEvent(event: OverlayEvent) {
   if (event.type === 'hello') {
+    previousBeatTimestamp = 0
     setStatus('已连接 OBS 音乐桥')
     return
   }
@@ -193,7 +195,19 @@ function handleEvent(event: OverlayEvent) {
     return
   }
 
-  const holdMs = event.intensity === 'strong' ? 170 : event.intensity === 'normal' ? 125 : 90
+  const baseHoldMs = event.intensity === 'strong' ? 170 : event.intensity === 'normal' ? 125 : 90
+  const interval = previousBeatTimestamp > 0 && event.timestamp > previousBeatTimestamp
+    ? event.timestamp - previousBeatTimestamp
+    : undefined
+  previousBeatTimestamp = event.timestamp
+
+  // At high tempos the detector can legitimately emit beats closer together
+  // than the old fixed hold time. Shorten the visual hold to leave a small
+  // release gap, otherwise two taps on the same hand look like one long press.
+  const minimumHoldMs = event.intensity === 'strong' ? 60 : 45
+  const holdMs = interval === undefined
+    ? baseHoldMs
+    : Math.min(baseHoldMs, Math.max(minimumHoldMs, Math.floor(interval * 0.72)))
   triggerAction(event.action, holdMs)
   if (debug) setStatus(`节拍 ${event.intensity} · ${event.levelDb.toFixed(1)} dB`)
 }

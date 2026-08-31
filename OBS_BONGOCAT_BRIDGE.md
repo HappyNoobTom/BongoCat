@@ -51,10 +51,16 @@ scripts\start-obs-bongocat.cmd --spectrum `
   --add-source --gui-password
 ```
 
-如果动作偏少，可把灵敏度提高到 `1.2`；如果连击偏多，可把最短间隔提高到 `260` 毫秒：
+如果快歌仍有漏拍，可把最短间隔降到 `70`～`80` 毫秒；如果连击偏多，可把最短间隔提高到 `180`～`260` 毫秒：
 
 ```powershell
-scripts\start-obs-bongocat.cmd --spectrum --sensitivity 1.2 --min-interval 260
+scripts\start-obs-bongocat.cmd --spectrum --sensitivity 1.2 --min-interval 80
+```
+
+如果猫咪需要和 OBS 画面或监听声音对齐，可以增加动作输出延迟（只增加延迟，不会提前预测）：
+
+```powershell
+scripts\start-obs-bongocat.cmd --spectrum --action-delay 80
 ```
 
 程序没有内置或重新打包该 EXE；找不到时会提示从

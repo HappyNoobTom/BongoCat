@@ -31,6 +31,7 @@ interface BridgeConfig {
   spectrumCapturePath?: string
   sensitivity?: number
   minIntervalMs?: number
+  actionDelayMs: number
   strongThreshold?: number
   silenceThresholdDb?: number
 }
@@ -80,7 +81,8 @@ BongoCat OBS 音频桥
   --spectrum            使用 Windows WASAPI 原始 PCM + FFT 频谱模式
   --spectrum-capture <路径>  指定 audio_capture Release 可执行文件路径
   --sensitivity <0.5-2>  频谱动态阈值灵敏度，默认 1
-  --min-interval <毫秒>  两次动作的最短间隔，默认 220
+  --min-interval <毫秒>  两次动作的最短间隔，默认 90（范围 70-600）
+  --action-delay <毫秒>  检测到节拍后延迟输出动作，默认 0（范围 0-500）
   --dry-run            只识别节拍，不驱动叠加层
   --help              显示此帮助
 
@@ -101,6 +103,7 @@ function parseArgs(argv: string[]): BridgeConfig | 'help' {
     overlayUrl: DEFAULT_OVERLAY_URL,
     addSource: false,
     spectrum: false,
+    actionDelayMs: 0,
   }
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -124,7 +127,7 @@ function parseArgs(argv: string[]): BridgeConfig | 'help' {
       continue
     }
 
-    if (arg === '--host' || arg === '--port' || arg === '--input' || arg === '--overlay-port' || arg === '--overlay-url' || arg === '--spectrum-capture' || arg === '--sensitivity' || arg === '--min-interval') {
+    if (arg === '--host' || arg === '--port' || arg === '--input' || arg === '--overlay-port' || arg === '--overlay-url' || arg === '--spectrum-capture' || arg === '--sensitivity' || arg === '--min-interval' || arg === '--action-delay') {
       const value = argv[index + 1]
       if (!value) throw new Error(`${arg} 缺少参数`)
 
@@ -155,10 +158,17 @@ function parseArgs(argv: string[]): BridgeConfig | 'help' {
       }
       if (arg === '--min-interval') {
         const minInterval = Number(value)
-        if (!Number.isInteger(minInterval) || minInterval < 120 || minInterval > 600) {
-          throw new Error(`最短间隔无效：${value}（范围 120 到 600 毫秒）`)
+        if (!Number.isInteger(minInterval) || minInterval < 70 || minInterval > 600) {
+          throw new Error(`最短间隔无效：${value}（范围 70 到 600 毫秒）`)
         }
         config.minIntervalMs = minInterval
+      }
+      if (arg === '--action-delay') {
+        const actionDelay = Number(value)
+        if (!Number.isInteger(actionDelay) || actionDelay < 0 || actionDelay > 500) {
+          throw new Error(`动作延迟无效：${value}（范围 0 到 500 毫秒）`)
+        }
+        config.actionDelayMs = actionDelay
       }
       index += 1
       continue
@@ -682,7 +692,7 @@ async function main() {
     ? new SpectrumAnalyzer({
         channels: 1,
         includeSpectrum: true,
-        minIntervalMs: config.minIntervalMs ?? 220,
+        minIntervalMs: config.minIntervalMs ?? 90,
         sampleRate: 48_000,
         sensitivity: config.sensitivity,
       })
@@ -696,6 +706,7 @@ async function main() {
   let shuttingDown = false
   let captureProcess: ReturnType<typeof spawn> | undefined
   let pcmRemainder = Buffer.alloc(0)
+  const pendingBeatTimers = new Set<ReturnType<typeof setTimeout>>()
 
   const emitBeat = (hit: BridgeBeat) => {
     beats += 1
@@ -716,16 +727,28 @@ async function main() {
     }
 
     if (!config.dryRun) {
-      overlay.publish({
-        type: 'beat',
-        action,
-        intensity: hit.intensity,
-        score: hit.score,
-        levelDb: hit.levelDb,
-        timestamp: hit.timestamp,
-        band: hit.band,
-        bpm: hit.bpm,
-      })
+      const publish = () => {
+        overlay.publish({
+          type: 'beat',
+          action,
+          intensity: hit.intensity,
+          score: hit.score,
+          levelDb: hit.levelDb,
+          timestamp: hit.timestamp,
+          band: hit.band,
+          bpm: hit.bpm,
+        })
+      }
+
+      if (config.actionDelayMs > 0) {
+        const timer = setTimeout(() => {
+          pendingBeatTimers.delete(timer)
+          if (!shuttingDown) publish()
+        }, config.actionDelayMs)
+        pendingBeatTimers.add(timer)
+      } else {
+        publish()
+      }
     }
 
     const bandLabel = hit.band ? ` ${hit.band}` : ''
@@ -773,6 +796,8 @@ async function main() {
   const shutdown = async (exitCode = 0) => {
     if (shuttingDown) return
     shuttingDown = true
+    for (const timer of pendingBeatTimers) clearTimeout(timer)
+    pendingBeatTimers.clear()
     if (captureProcess) {
       captureProcess.kill()
       captureProcess = undefined
@@ -927,6 +952,7 @@ async function main() {
     }
 
     console.log(`已连接 OBS，音频模式：${spectrumMode ? 'Windows WASAPI 频谱' : `OBS 音量表（${selectedInputName}）`}`)
+    console.log(`动作输出延迟：${config.actionDelayMs}ms`)
     if (config.dryRun) {
       console.log('当前为 dry-run：会识别节拍，但不会驱动叠加层')
     } else {

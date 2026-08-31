@@ -11,6 +11,7 @@ export interface ObsAudioSettings {
   inputName: string
   sensitivity: number
   minIntervalMs: number
+  actionDelayMs: number
   strongThreshold: number
   silenceThreshold: number
 }
@@ -28,7 +29,8 @@ export const DEFAULT_OBS_AUDIO_SETTINGS: Readonly<ObsAudioSettings> = Object.fre
   password: '',
   inputName: '',
   sensitivity: 1,
-  minIntervalMs: 120,
+  minIntervalMs: 90,
+  actionDelayMs: 0,
   strongThreshold: 2.1,
   // OBS' magnitude meter can sit well below -55 dB for a quiet music source.
   // Keep the detector gate low and let its adaptive baseline reject noise.

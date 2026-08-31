@@ -227,7 +227,22 @@ function resetDefaults() {
           v-model:value="store.settings.minIntervalMs"
           class="w-20"
           :max="500"
-          :min="60"
+          :min="70"
+        />
+        <SpaceAddon>ms</SpaceAddon>
+      </SpaceCompact>
+    </ProListItem>
+
+    <ProListItem
+      description="检测到重音后延迟触发猫咪动作，用于和 OBS 画面或音频监听做同步。"
+      title="动作输出延迟"
+    >
+      <SpaceCompact>
+        <InputNumber
+          v-model:value="store.settings.actionDelayMs"
+          class="w-20"
+          :max="500"
+          :min="0"
         />
         <SpaceAddon>ms</SpaceAddon>
       </SpaceCompact>

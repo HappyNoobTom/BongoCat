@@ -120,6 +120,7 @@ export function useObsAudio() {
   const detector = new RhythmDetector()
   const obs = new OBSWebSocket()
   const releaseTimers = new Map<string, ReturnType<typeof setTimeout>>()
+  const actionDelayTimers = new Set<ReturnType<typeof setTimeout>>()
 
   let shouldRun = false
   let connectionAttempt: Promise<void> | undefined
@@ -196,6 +197,11 @@ export function useObsAudio() {
     }
 
     releaseTimers.clear()
+  }
+
+  const clearPendingActions = () => {
+    for (const timer of actionDelayTimers) clearTimeout(timer)
+    actionDelayTimers.clear()
   }
 
   const releaseAllModelKeys = () => {
@@ -304,6 +310,20 @@ export function useObsAudio() {
     releaseKeyLater(key, 120)
   }
 
+  const scheduleHit = (hit: RhythmHit) => {
+    const delay = Math.max(0, Math.round(store.settings.actionDelayMs))
+    if (delay === 0) {
+      triggerHit(hit)
+      return
+    }
+
+    const timer = setTimeout(() => {
+      actionDelayTimers.delete(timer)
+      if (shouldRun && store.settings.enabled) triggerHit(hit)
+    }, delay)
+    actionDelayTimers.add(timer)
+  }
+
   const handleVolumeMeters = (event: ObsVolumeEvent) => {
     if (!shouldRun || !store.settings.enabled) return
 
@@ -333,7 +353,7 @@ export function useObsAudio() {
     if (hit) {
       store.lastBeatAt = hit.timestamp
       store.lastBeatIntensity = hit.intensity
-      triggerHit(hit)
+      scheduleHit(hit)
       publishRuntime(true)
     } else {
       publishRuntime()
@@ -409,6 +429,7 @@ export function useObsAudio() {
     connectionGeneration += 1
     clearReconnect()
     detector.reset()
+    clearPendingActions()
     releaseAllMusicKeys()
     resetRuntimeLevel()
     store.inputs = []
@@ -489,6 +510,7 @@ export function useObsAudio() {
   watch(() => [
     store.settings.sensitivity,
     store.settings.minIntervalMs,
+    store.settings.actionDelayMs,
     store.settings.strongThreshold,
     store.settings.silenceThreshold,
   ], applySettings)

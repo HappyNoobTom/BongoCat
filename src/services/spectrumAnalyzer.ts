@@ -50,7 +50,10 @@ const DEFAULT_OPTIONS: Required<SpectrumAnalyzerOptions> = {
   channels: 1,
   fftSize: 2048,
   hopSize: 512,
-  minIntervalMs: 220,
+  // A 220 ms refractory period misses many eighth-note accents in fast
+  // tracks. The flux/local-peak gates below still reject sustained noise, so
+  // a shorter default is safe for the visual keyboard animation.
+  minIntervalMs: 90,
   sensitivity: 1,
   includeSpectrum: true,
 }
@@ -58,6 +61,8 @@ const DEFAULT_OPTIONS: Required<SpectrumAnalyzerOptions> = {
 const MIN_DB = -100
 const HISTORY_MS = 2200
 const MIN_WARM_FRAMES = 20
+const MIN_DETECT_INTERVAL_MS = 70
+const MIN_BPM_INTERVAL_MS = 80
 const FLUX_FLOOR = 0.006
 const LOW_ENERGY_RISE_DB = 0.35
 const MID_ENERGY_RISE_DB = 0.5
@@ -118,7 +123,7 @@ class SpectrumOnsetDetector {
   private bpm = 0
 
   constructor(options: Pick<SpectrumAnalyzerOptions, 'minIntervalMs' | 'sensitivity'>) {
-    this.minIntervalMs = clamp(options.minIntervalMs ?? DEFAULT_OPTIONS.minIntervalMs, 120, 600)
+    this.minIntervalMs = clamp(options.minIntervalMs ?? DEFAULT_OPTIONS.minIntervalMs, MIN_DETECT_INTERVAL_MS, 600)
     this.sensitivity = clamp(options.sensitivity ?? DEFAULT_OPTIONS.sensitivity, 0.5, 2)
   }
 
@@ -225,7 +230,7 @@ class SpectrumOnsetDetector {
   private recordLowBeat(timestamp: number) {
     if (this.lastLowBeatAt !== -Infinity) {
       const interval = timestamp - this.lastLowBeatAt
-      if (interval >= 300 && interval <= 1500) {
+      if (interval >= MIN_BPM_INTERVAL_MS && interval <= 1500) {
         this.lowIntervals.push(interval)
         if (this.lowIntervals.length > 8) this.lowIntervals.shift()
         const sorted = [...this.lowIntervals].sort((a, b) => a - b)
@@ -272,7 +277,7 @@ export class SpectrumAnalyzer {
       channels: Math.max(1, Math.round(options.channels ?? DEFAULT_OPTIONS.channels)),
       fftSize: options.fftSize ?? DEFAULT_OPTIONS.fftSize,
       hopSize: options.hopSize ?? DEFAULT_OPTIONS.hopSize,
-      minIntervalMs: clamp(options.minIntervalMs ?? DEFAULT_OPTIONS.minIntervalMs, 120, 600),
+      minIntervalMs: clamp(options.minIntervalMs ?? DEFAULT_OPTIONS.minIntervalMs, MIN_DETECT_INTERVAL_MS, 600),
       sensitivity: clamp(options.sensitivity ?? DEFAULT_OPTIONS.sensitivity, 0.5, 2),
       includeSpectrum: options.includeSpectrum ?? DEFAULT_OPTIONS.includeSpectrum,
     }

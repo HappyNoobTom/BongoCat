@@ -31,7 +31,7 @@ interface TimedSample extends RhythmSample {
 
 const DEFAULT_OPTIONS: RhythmDetectorOptions = {
   sensitivity: 1,
-  minIntervalMs: 150,
+  minIntervalMs: 90,
   strongThreshold: 2.1,
   silenceThresholdDb: -80,
   historyMs: 1800,
@@ -40,6 +40,7 @@ const DEFAULT_OPTIONS: RhythmDetectorOptions = {
 const SAMPLE_INTERVAL_MS = 50
 const PEAK_WINDOW_SIZE = 3
 const MIN_WARM_SAMPLES = 8
+const MIN_DETECT_INTERVAL_MS = 70
 const SILENCE_RESET_MS = 300
 // With OBS' 50 ms meter samples, a one-decibel musical accent can be quite
 // small after RMS integration. Keep the floor below that so quiet kick/snare
@@ -76,7 +77,7 @@ export class RhythmDetector {
       ...this.options,
       ...options,
       sensitivity: clamp(options.sensitivity ?? this.options.sensitivity, 0.5, 2),
-      minIntervalMs: clamp(options.minIntervalMs ?? this.options.minIntervalMs, 80, 500),
+      minIntervalMs: clamp(options.minIntervalMs ?? this.options.minIntervalMs, MIN_DETECT_INTERVAL_MS, 500),
       strongThreshold: clamp(options.strongThreshold ?? this.options.strongThreshold, 1.4, 4),
       silenceThresholdDb: clamp(options.silenceThresholdDb ?? this.options.silenceThresholdDb, -100, -20),
       historyMs: clamp(options.historyMs ?? this.options.historyMs ?? 2400, 800, 5000),
